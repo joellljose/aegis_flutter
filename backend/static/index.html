@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AEGIS One — Control & Role Management Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #0284c7;
+      --primary-dark: #0369a1;
+      --primary-light: #e0f2fe;
+      --surface: #ffffff;
+      --bg: #f8fafc;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --radius: 12px;
+      --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding-bottom: 40px;
+    }
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo-badge {
+      background: var(--primary);
+      color: white;
+      font-weight: 700;
+      padding: 6px 12px;
+      border-radius: 8px;
+      letter-spacing: 1px;
+    }
+    .role-selector {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--primary-light);
+      padding: 6px 12px;
+      border-radius: 8px;
+    }
+    select {
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: white;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 24px auto;
+      padding: 0 16px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 20px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+    }
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--primary-dark);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      background: var(--primary-light);
+      color: var(--primary-dark);
+    }
+    .badge.success { background: #dcfce7; color: #166534; }
+    .badge.danger { background: #fee2e2; color: #991b1b; }
+    .btn {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-weight: 500;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: var(--primary-dark); }
+    .btn-danger { background: var(--danger); }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-outline:hover { background: #f1f5f9; }
+    .form-group {
+      margin-bottom: 12px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 4px;
+      color: var(--text-muted);
+    }
+    input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 14px;
+    }
+    .terminal-output {
+      background: #0f172a;
+      color: #38bdf8;
+      font-family: monospace;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+      margin-top: 10px;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo-badge">AEGIS ONE</div>
+      <div>
+        <h1 style="font-size: 18px; font-weight: 700;">Role & Auth Control Center</h1>
+        <p style="font-size: 12px; color: var(--text-muted);">Smart Personal Emergency Response API</p>
+      </div>
+    </div>
+    <div class="role-selector">
+      <label for="activeRole" style="margin: 0; font-weight: 600;">Simulated Role:</label>
+      <select id="activeRole" onchange="onRoleChange()">
+        <option value="normal_user">Normal User (Jane Doe)</option>
+        <option value="police">Police Authority (Metro Precinct)</option>
+        <option value="hospital">Hospital Staff (General Care)</option>
+        <option value="admin">System Administrator</option>
+      </select>
+      <button class="btn btn-outline" onclick="checkHealth()">Test /health</button>
+      <a href="/docs" target="_blank" class="btn" style="text-decoration: none;">Open Swagger UI</a>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Card 1: User Profile -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">1. Current Profile (/api/v1/profile/me)</h2>
+        <span class="badge" id="profileBadge">Active</span>
+      </div>
+      <div class="form-group">
+        <label>Full Name</label>
+        <input type="text" id="profName" value="Jane Doe">
+      </div>
+      <div class="form-group">
+        <label>Blood Group & Allergies</label>
+        <input type="text" id="profMed" value="Blood: O+, Allergies: Penicillin">
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn" onclick="fetchProfile()">Load Profile</button>
+        <button class="btn btn-outline" onclick="updateProfile()">Save Changes</button>
+      </div>
+      <div class="terminal-output" id="profileLog">Click "Load Profile" to fetch current authenticated data.</div>
+    </div>
+
+    <!-- Card 2: Devices & Pairing -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">2. Hardware Devices (/api/v1/devices)</h2>
+        <span class="badge success">Bluetooth Paired</span>
+      </div>
+      <div class="form-group">
+        <label>AEGIS Hardware Device ID</label>
+        <input type="text" id="devId" value="AEGIS-DEV-9821">
+      </div>
+      <div class="form-group">
+        <label>Device Nickname</label>
+        <input type="text" id="devName" value="My Emergency Pendant">
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn" onclick="pairDevice()">Pair Device</button>
+        <button class="btn btn-outline" onclick="listDevices()">List Devices</button>
+      </div>
+      <div class="terminal-output" id="deviceLog">Ready to pair or query devices.</div>
+    </div>
+
+    <!-- Card 3: Trusted Contacts -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">3. Trusted Contacts (/api/v1/contacts)</h2>
+        <span class="badge">Notification-Only OK</span>
+      </div>
+      <div class="form-group">
+        <label>Contact Name & Relationship</label>
+        <input type="text" id="contactName" value="Robert Doe (Brother)">
+      </div>
+      <div class="form-group">
+        <label>Emergency Phone</label>
+        <input type="text" id="contactPhone" value="+1555019823">
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn" onclick="addContact()">Add Contact</button>
+        <button class="btn btn-outline" onclick="listContacts()">List Contacts</button>
+      </div>
+      <div class="terminal-output" id="contactLog">No contacts queried yet.</div>
+    </div>
+
+    <!-- Card 4: Emergency Dispatch -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">4. Emergency Trigger (/api/v1/emergencies)</h2>
+        <span class="badge danger">SOS System</span>
+      </div>
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+        Triggers emergency event with GPS coordinates and owner's emergency profile for authorized responders.
+      </p>
+      <div class="form-group">
+        <label>Coordinates (Latitude, Longitude)</label>
+        <input type="text" id="emCoords" value="37.7749, -122.4194">
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn btn-danger" onclick="triggerSOS()">🚨 TRIGGER SOS ALERT</button>
+        <button class="btn btn-outline" onclick="listEmergencies()">View Authorized Cases</button>
+      </div>
+      <div class="terminal-output" id="emergencyLog">Emergency monitoring idle.</div>
+    </div>
+
+    <!-- Card 5: Organization Verification -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">5. Authority Verification (Admin / Org)</h2>
+        <span class="badge" id="orgBadge">Admin Review</span>
+      </div>
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+        Police and Hospital accounts require explicit administrative verification before access to emergency location data is granted.
+      </p>
+      <div class="form-group">
+        <label>Organization Application Name</label>
+        <input type="text" id="orgName" value="Metro Police Department - Precinct 5">
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn" onclick="submitOrgRegistration()">Submit Verification</button>
+        <button class="btn btn-outline" onclick="loadPendingOrgs()">Admin: View Pending</button>
+      </div>
+      <div class="terminal-output" id="orgLog">Select "Admin" role above to approve pending organizations.</div>
+    </div>
+
+    <!-- Card 6: Immutable Audit Logs -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">6. Audit Logs (/api/v1/admin/audit-logs)</h2>
+        <span class="badge">Security Trail</span>
+      </div>
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+        Audits all sensitive security events: elevation attempts, status updates, emergency incidents.
+      </p>
+      <button class="btn" onclick="loadAuditLogs()">Fetch Audit Trail (Admin)</button>
+      <div class="terminal-output" id="auditLog">Restricted to Administrator role.</div>
+    </div>
+  </div>
+
+  <script>
+    let currentRole = "normal_user";
+    let token = "mock-token:user_123:normal_user";
+
+    function onRoleChange() {
+      const select = document.getElementById("activeRole");
+      currentRole = select.value;
+      if (currentRole === "normal_user") {
+        token = "mock-token:user_123:normal_user";
+      } else if (currentRole === "police") {
+        token = "mock-token:police_789:police";
+      } else if (currentRole === "hospital") {
+        token = "mock-token:hospital_321:hospital";
+      } else if (currentRole === "admin") {
+        token = "mock-token:admin_001:admin";
+      }
+      log("profileLog", "Switched simulated session to: " + currentRole + "\\nToken: " + token);
+    }
+
+    function log(elementId, data) {
+      const el = document.getElementById(elementId);
+      el.textContent = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
+    }
+
+    async function checkHealth() {
+      try {
+        const res = await fetch("/health");
+        const json = await res.json();
+        alert("Health Check OK: " + JSON.stringify(json));
+      } catch (err) {
+        alert("Error connecting to backend: " + err);
+      }
+    }
+
+    async function fetchProfile() {
+      try {
+        const res = await fetch("/api/v1/profile/me", {
+          headers: { "Authorization": "Bearer " + token }
+        });
+        const json = await res.json();
+        log("profileLog", json);
+        if (json.full_name) document.getElementById("profName").value = json.full_name;
+      } catch (e) {
+        log("profileLog", "Error: " + e);
+      }
+    }
+
+    async function updateProfile() {
+      try {
+        const name = document.getElementById("profName").value;
+        const res = await fetch("/api/v1/profile/me", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token
+          },
+          body: JSON.stringify({ full_name: name })
+        });
+        const json = await res.json();
+        log("profileLog", json);
+      } catch (e) {
+        log("profileLog", "Error: " + e);
+      }
+    }
+
+    async function pairDevice() {
+      try {
+        const id = document.getElementById("devId").value;
+        const name = document.getElementById("devName").value;
+        const res = await fetch("/api/v1/devices", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token
+          },
+          body: JSON.stringify({ device_id: id, device_name: name })
+        });
+        const json = await res.json();
+        log("deviceLog", json);
+      } catch (e) {
+        log("deviceLog", "Error: " + e);
+      }
+    }
+
+    async function listDevices() {
+      try {
+        const res = await fetch("/api/v1/devices", {
+          headers: { "Authorization": "Bearer " + token }
+        });
+        const json = await res.json();
+        log("deviceLog", json);
+      } catch (e) {
+        log("deviceLog", "Error: " + e);
+      }
+    }
+
+    async function addContact() {
+      try {
+        const name = document.getElementById("contactName").value;
+        const phone = document.getElementById("contactPhone").value;
+        const res = await fetch("/api/v1/contacts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token
+          },
+          body: JSON.stringify({
+            contact_name: name,
+            phone: phone,
+            relationship: "Emergency Contact"
+          })
+        });
+        const json = await res.json();
+        log("contactLog", json);
+      } catch (e) {
+        log("contactLog", "Error: " + e);
+      }
+    }
+
+    async function listContacts() {
+      try {
+        const res = await fetch("/api/v1/contacts", {
+          headers: { "Authorization": "Bearer " + token }
+        });
+        const json = await res.json();
+        log("contactLog", json);
+      } catch (e) {
+        log("contactLog", "Error: " + e);
+      }
+    }
+
+    async function triggerSOS() {
+      try {
+        const res = await fetch("/api/v1/emergencies", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token
+          },
+          body: JSON.stringify({
+            device_id: document.getElementById("devId").value,
+            event_type: "sos",
+            latitude: 37.7749,
+            longitude: -122.4194,
+            location_accuracy: 3.5,
+            assigned_organization_ids: ["org_precinct_01"]
+          })
+        });
+        const json = await res.json();
+        log("emergencyLog", json);
+      } catch (e) {
+        log("emergencyLog", "Error: " + e);
+      }
+    }
+
+    async function listEmergencies() {
+      try {
+        const res = await fetch("/api/v1/emergencies", {
+          headers: { "Authorization": "Bearer " + token }
+        });
+        const json = await res.json();
+        log("emergencyLog", json);
+      } catch (e) {
+        log("emergencyLog", "Error: " + e);
+      }
+    }
+
+    async function submitOrgRegistration() {
+      try {
+        const name = document.getElementById("orgName").value;
+        const res = await fetch("/api/v1/organizations/registration", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + token
+          },
+          body: JSON.stringify({
+            organization_type: "police",
+            organization_name: name,
+            official_email: "dispatch@metro-police.gov",
+            official_phone: "+18005550199",
+            address: "100 Police Plaza",
+            service_area: "City Center Metro"
+          })
+        });
+        const json = await res.json();
+        log("orgLog", json);
+      } catch (e) {
+        log("orgLog", "Error: " + e);
+      }
+    }
+
+    async function loadPendingOrgs() {
+      try {
+        const res = await fetch("/api/v1/admin/organizations/pending", {
+          headers: { "Authorization": "Bearer " + token }
+        });
+        const json = await res.json();
+        log("orgLog", json);
+      } catch (e) {
+        log("orgLog", "Error: " + e);
+      }
+    }
+
+    async function loadAuditLogs() {
+      try {
+        const res = await fetch("/api/v1/admin/audit-logs", {
+          headers: { "Authorization": "Bearer " + token }
+        });
+        const json = await res.json();
+        log("auditLog", json);
+      } catch (e) {
+        log("auditLog", "Error: " + e);
+      }
+    }
+  </script>
+</body>
+</html>

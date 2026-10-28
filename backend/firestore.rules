@@ -1,0 +1,66 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Default deny for all documents
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // users collection: Users may read their own profile, but NO direct writes
+    // (Profile mutations must go through the AEGIS backend to prevent role self-escalation)
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if false; // Only backend Firebase Admin SDK can write
+    }
+
+    // devices collection: Users may read their own devices
+    match /devices/{deviceId} {
+      allow read: if isAuthenticated() && resource.data.owner_uid == request.auth.uid;
+      allow write: if false; // Managed via backend
+    }
+
+    // trusted_contacts collection: Device owners can read their contacts
+    match /trusted_contacts/{contactId} {
+      allow read: if isAuthenticated() && (
+        resource.data.owner_uid == request.auth.uid ||
+        resource.data.email == request.auth.token.email
+      );
+      allow write: if false; // Managed via backend
+    }
+
+    // organizations collection: Only verified staff or admins can read; writes via backend
+    match /organizations/{organizationId} {
+      allow read: if isAuthenticated() && (
+        resource.data.registered_by_uid == request.auth.uid ||
+        request.auth.token.role == 'admin'
+      );
+      allow write: if false; // Managed via backend
+    }
+
+    // emergency_events collection: Access restricted to owner or assigned responders
+    match /emergency_events/{eventId} {
+      allow read: if isAuthenticated() && (
+        resource.data.owner_uid == request.auth.uid ||
+        request.auth.token.role == 'admin' ||
+        (request.auth.token.role in ['police', 'hospital'] &&
+         request.auth.token.organization_id in resource.data.assigned_organization_ids)
+      );
+      allow write: if false; // Managed via backend
+    }
+
+    // audit_logs collection: Strictly internal; no client reads or writes
+    match /audit_logs/{logId} {
+      allow read, write: if false;
+    }
+  }
+}
