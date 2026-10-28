@@ -24,33 +24,33 @@ class StorageService {
         return decoded.map((e) => EmergencyContact.fromJson(e)).toList();
       } catch (_) {}
     }
-    // Default initial contacts matching project specs
-    return [
-      EmergencyContact(
-        id: 'c1',
-        name: 'Elena Vance (Mother)',
-        phone: '+1 (555) 234-8901',
-        relation: 'Family',
-        priority: 1,
-        channels: ['SMS', 'WhatsApp', 'CALL'],
-      ),
-      EmergencyContact(
-        id: 'c2',
-        name: 'Campus Safety & Patrol HQ',
-        phone: '+1 (555) 889-4400',
-        relation: 'Security',
-        priority: 1,
-        channels: ['SMS', 'CALL'],
-      ),
-      EmergencyContact(
-        id: 'c3',
-        name: 'Marcus Brody (Roommate)',
-        phone: '+1 (555) 345-6712',
-        relation: 'Friend',
-        priority: 2,
-        channels: ['SMS', 'WhatsApp'],
-      ),
-    ];
+    // Return empty list so only real user-added contacts are loaded
+    return [];
+  }
+
+  static const String _keyPairedDevice = 'aegis_paired_device_id';
+  static const String _keyPairedDeviceName = 'aegis_paired_device_name';
+
+  Future<void> savePairedDevice(String deviceId, String deviceName) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyPairedDevice, deviceId);
+    await prefs.setString(_keyPairedDeviceName, deviceName);
+  }
+
+  Future<Map<String, String?>?> loadPairedDevice() async {
+    final prefs = await SharedPreferences.getInstance();
+    final deviceId = prefs.getString(_keyPairedDevice);
+    if (deviceId == null || deviceId.isEmpty) return null;
+    return {
+      'deviceId': deviceId,
+      'deviceName': prefs.getString(_keyPairedDeviceName) ?? 'AEGIS One ($deviceId)',
+    };
+  }
+
+  Future<void> clearPairedDevice() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyPairedDevice);
+    await prefs.remove(_keyPairedDeviceName);
   }
 
   Future<void> saveMedicalProfile(MedicalProfile profile) async {

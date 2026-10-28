@@ -15,11 +15,152 @@ class HardwareDeviceCompanionWidget extends StatefulWidget {
 class _HardwareDeviceCompanionWidgetState extends State<HardwareDeviceCompanionWidget> {
   bool _showHardwareTestDeck = false;
 
+  void _showPairDialog(BuildContext context, AegisProvider provider) {
+    final textController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AegisColors.primaryBlueLight,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.bluetooth_searching, color: AegisColors.primaryBlue, size: 22),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'Pair AEGIS One',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AegisColors.textPrimary),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter the Device ID printed on the back of your physical AEGIS One wearable (e.g. AEGIS-ONE-XXXX):',
+              style: TextStyle(fontSize: 13, color: AegisColors.textSecondary, height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: textController,
+              decoration: InputDecoration(
+                labelText: 'Device Serial / ID',
+                hintText: 'e.g. AEGIS-ONE-01',
+                prefixIcon: const Icon(Icons.qr_code, color: AegisColors.primaryBlue),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: AegisColors.background,
+              ),
+              textCapitalization: TextCapitalization.characters,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: AegisColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final id = textController.text.trim();
+              if (id.isNotEmpty) {
+                provider.pairDevice(id);
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: AegisColors.primaryBlue,
+                    content: Text('AEGIS One ($id) successfully paired and linked.'),
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AegisColors.primaryBlue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Pair Device'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<AegisProvider>();
+    final telemetry = provider.telemetry;
     final isSafe = provider.state == SystemState.allSafe;
 
+    // --- UNPAIRED STATE ---
+    if (!telemetry.isPaired) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AegisColors.cardBorder),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x06000000),
+              blurRadius: 12,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: AegisColors.primaryBlueLight,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.bluetooth_searching, color: AegisColors.primaryBlue, size: 30),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'No AEGIS One Device Paired',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AegisColors.textPrimary),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Pair your physical emergency response wearable via BLE 5.0 to activate hardware button alerts and telemetry.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: AegisColors.textSecondary, height: 1.4),
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => _showPairDialog(context, provider),
+                icon: const Icon(Icons.link, size: 18),
+                label: const Text('Pair AEGIS One ', style: TextStyle(fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AegisColors.primaryBlue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // --- PAIRED STATE ---
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -41,10 +182,9 @@ class _HardwareDeviceCompanionWidgetState extends State<HardwareDeviceCompanionW
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Device Header: Visual, Name, Status
+          // Device Header: Icon, Name, Link Status
           Row(
             children: [
-              // Hardware Pendant Icon Box
               Container(
                 width: 52,
                 height: 52,
@@ -70,7 +210,7 @@ class _HardwareDeviceCompanionWidgetState extends State<HardwareDeviceCompanionW
                           height: 8,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: isSafe ? AegisColors.medicalGreen : AegisColors.policeRed,
+                            color: telemetry.bleConnected ? AegisColors.medicalGreen : AegisColors.textMuted,
                           ),
                         ),
                       ),
@@ -80,7 +220,6 @@ class _HardwareDeviceCompanionWidgetState extends State<HardwareDeviceCompanionW
               ),
               const SizedBox(width: 14),
 
-              // Device Metadata
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -89,10 +228,10 @@ class _HardwareDeviceCompanionWidgetState extends State<HardwareDeviceCompanionW
                       children: [
                         Flexible(
                           child: Text(
-                            provider.telemetry.bleDeviceName,
+                            telemetry.bleDeviceName,
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
-                              fontSize: 16,
+                              fontSize: 15,
                               color: AegisColors.textPrimary,
                             ),
                           ),
@@ -101,16 +240,20 @@ class _HardwareDeviceCompanionWidgetState extends State<HardwareDeviceCompanionW
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: AegisColors.medicalGreenLight,
+                            color: telemetry.bleConnected ? AegisColors.medicalGreenLight : AegisColors.background,
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: AegisColors.medicalGreen.withValues(alpha: 0.4)),
+                            border: Border.all(
+                              color: telemetry.bleConnected
+                                  ? AegisColors.medicalGreen.withValues(alpha: 0.4)
+                                  : AegisColors.cardBorder,
+                            ),
                           ),
-                          child: const Text(
-                            'ARMED',
+                          child: Text(
+                            telemetry.bleConnected ? 'CONNECTED' : 'DISCONNECTED',
                             style: TextStyle(
                               fontSize: 9,
                               fontWeight: FontWeight.bold,
-                              color: AegisColors.medicalGreen,
+                              color: telemetry.bleConnected ? AegisColors.medicalGreen : AegisColors.textMuted,
                               letterSpacing: 0.8,
                             ),
                           ),
@@ -118,12 +261,21 @@ class _HardwareDeviceCompanionWidgetState extends State<HardwareDeviceCompanionW
                       ],
                     ),
                     const SizedBox(height: 2),
-                    const Text(
-                      'Physical Wearable IPSD · BLE 5.0 Active',
-                      style: TextStyle(fontSize: 12, color: AegisColors.textSecondary),
+                    Text(
+                      'ID: ${telemetry.deviceId ?? "N/A"} · Firmware: ${telemetry.firmwareVersion}',
+                      style: const TextStyle(fontSize: 11, color: AegisColors.textSecondary),
                     ),
                   ],
                 ),
+              ),
+
+              IconButton(
+                onPressed: () => provider.toggleBleConnection(),
+                icon: Icon(
+                  telemetry.bleConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
+                  color: telemetry.bleConnected ? AegisColors.primaryBlue : AegisColors.textMuted,
+                ),
+                tooltip: telemetry.bleConnected ? 'Disconnect BLE' : 'Reconnect BLE',
               ),
             ],
           ),
@@ -131,43 +283,93 @@ class _HardwareDeviceCompanionWidgetState extends State<HardwareDeviceCompanionW
           const Divider(color: AegisColors.cardBorder, height: 1),
           const SizedBox(height: 16),
 
-          // Companion Telemetry Indicators Row
+          // Telemetry Indicators Row
           Row(
             children: [
               Expanded(
                 child: _buildTelemetryPill(
                   icon: Icons.battery_charging_full,
                   label: 'BATTERY',
-                  value: '${provider.telemetry.battery}%',
-                  sub: '~5d Standby',
+                  value: '${telemetry.battery}%',
+                  sub: '~${telemetry.batteryDaysRemaining}d Standby',
                   color: AegisColors.medicalGreen,
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: _buildTelemetryPill(
-                  icon: Icons.bluetooth_connected,
-                  label: 'BLE LINK',
-                  value: 'Connected',
-                  sub: '-58 dBm Signal',
-                  color: AegisColors.primaryBlue,
+                  icon: Icons.bluetooth,
+                  label: 'SIGNAL',
+                  value: telemetry.bleConnected ? '${telemetry.rssi} dBm' : 'Lost',
+                  sub: telemetry.bleConnected ? 'BLE 5.0 Link' : 'No Signal',
+                  color: telemetry.bleConnected ? AegisColors.primaryBlue : AegisColors.textMuted,
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: _buildTelemetryPill(
-                  icon: Icons.cell_tower,
-                  label: 'CELLULAR',
-                  value: 'LTE-M 4G',
-                  sub: 'eSIM Online',
-                  color: AegisColors.warningAmber,
+                  icon: Icons.gps_fixed,
+                  label: 'GPS LOCK',
+                  value: provider.currentLat != null ? 'Acquired' : 'Standby',
+                  sub: provider.currentAccuracy != null ? '±${provider.currentAccuracy!.toStringAsFixed(1)}m' : 'Searching',
+                  color: provider.currentLat != null ? AegisColors.primaryBlue : AegisColors.warningAmber,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
 
-          // Physical Buttons Status Monitoring Section
+          // Wearable Hardware Toggles (Fall Detection & Silent Alarm)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: AegisColors.background,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AegisColors.cardBorder),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.directions_run, size: 18, color: AegisColors.textPrimary),
+                        SizedBox(width: 8),
+                        Text('Hardware Fall Detection', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AegisColors.textPrimary)),
+                      ],
+                    ),
+                    Switch(
+                      value: telemetry.fallDetectionEnabled,
+                      onChanged: (_) => provider.toggleFallDetection(),
+                      activeColor: AegisColors.primaryBlue,
+                    ),
+                  ],
+                ),
+                const Divider(color: AegisColors.cardBorder, height: 1),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.volume_off, size: 18, color: AegisColors.textPrimary),
+                        SizedBox(width: 8),
+                        Text('Silent Emergency Mode', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AegisColors.textPrimary)),
+                      ],
+                    ),
+                    Switch(
+                      value: telemetry.silentAlarm,
+                      onChanged: (_) => provider.toggleSilentAlarm(),
+                      activeColor: AegisColors.policeRed,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Hardware Buttons Status Monitoring Section
           const Text(
             'PHYSICAL HARDWARE SENSORS & BUTTONS',
             style: TextStyle(
@@ -213,30 +415,30 @@ class _HardwareDeviceCompanionWidgetState extends State<HardwareDeviceCompanionW
           ),
           const SizedBox(height: 16),
 
-          // Hardware Companion Controls: Ping Buzzer & Re-sync
+          // Hardware Controls: Ping Buzzer, Sync, and Unpair
           Row(
             children: [
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: () => provider.triggerFindMyAegis(),
                   icon: const Icon(Icons.volume_up_outlined, size: 16),
-                  label: const Text('Find My AEGIS (Buzzer)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  label: const Text('Test Buzzer', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AegisColors.primaryBlue,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               OutlinedButton.icon(
                 onPressed: () {
                   provider.refreshLocation();
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Telemetry refreshed with AEGIS One hardware.'),
+                      content: Text('Hardware telemetry and GPS synced.'),
                       duration: Duration(seconds: 2),
                     ),
                   );
@@ -246,7 +448,18 @@ class _HardwareDeviceCompanionWidgetState extends State<HardwareDeviceCompanionW
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AegisColors.textSecondary,
                   side: const BorderSide(color: AegisColors.cardBorder),
-                  padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 16),
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: () => provider.unpairDevice(),
+                icon: const Icon(Icons.link_off, size: 16, color: AegisColors.dangerRed),
+                label: const Text('Unpair', style: TextStyle(fontSize: 12, color: AegisColors.dangerRed)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AegisColors.cardBorder),
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
               ),
@@ -254,7 +467,7 @@ class _HardwareDeviceCompanionWidgetState extends State<HardwareDeviceCompanionW
           ),
           const SizedBox(height: 12),
 
-          // Developer / Hardware Testing Deck
+          // Hardware Trigger Testing Deck
           InkWell(
             onTap: () => setState(() => _showHardwareTestDeck = !_showHardwareTestDeck),
             borderRadius: BorderRadius.circular(10),
@@ -272,13 +485,13 @@ class _HardwareDeviceCompanionWidgetState extends State<HardwareDeviceCompanionW
                       ),
                       const SizedBox(width: 6),
                       const Text(
-                        'Hardware Signal Test Simulator',
+                        'Hardware Button Simulation Deck',
                         style: TextStyle(fontSize: 12, color: AegisColors.primaryBlue, fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
                   Text(
-                    _showHardwareTestDeck ? 'Hide' : 'Test Triggers',
+                    _showHardwareTestDeck ? 'Hide' : 'Test Hardware',
                     style: const TextStyle(fontSize: 11, color: AegisColors.primaryBlue, fontWeight: FontWeight.w600),
                   ),
                 ],
@@ -299,7 +512,7 @@ class _HardwareDeviceCompanionWidgetState extends State<HardwareDeviceCompanionW
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Simulate incoming physical button click over BLE:',
+                    'Simulate incoming physical button presses from the AEGIS One wearable:',
                     style: TextStyle(fontSize: 11, color: AegisColors.textSecondary),
                   ),
                   const SizedBox(height: 10),
@@ -369,12 +582,21 @@ class _HardwareDeviceCompanionWidgetState extends State<HardwareDeviceCompanionW
             children: [
               Icon(icon, size: 14, color: color),
               const SizedBox(width: 4),
-              Text(label, style: const TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: AegisColors.textMuted)),
+              Text(
+                label,
+                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AegisColors.textMuted, letterSpacing: 0.5),
+              ),
             ],
           ),
-          const SizedBox(height: 4),
-          Text(value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: color)),
-          Text(sub, style: const TextStyle(fontSize: 9, color: AegisColors.textSecondary)),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AegisColors.textPrimary),
+          ),
+          Text(
+            sub,
+            style: const TextStyle(fontSize: 10, color: AegisColors.textSecondary),
+          ),
         ],
       ),
     );
@@ -389,17 +611,17 @@ class _HardwareDeviceCompanionWidgetState extends State<HardwareDeviceCompanionW
     return Row(
       children: [
         Container(
-          width: 26,
-          height: 26,
+          width: 24,
+          height: 24,
           decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12),
+            color: color.withValues(alpha: 0.1),
             shape: BoxShape.circle,
-            border: Border.all(color: color.withValues(alpha: 0.4)),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
           ),
           child: Center(
             child: Text(
               buttonNumber,
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: color),
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
             ),
           ),
         ),
@@ -410,7 +632,7 @@ class _HardwareDeviceCompanionWidgetState extends State<HardwareDeviceCompanionW
             children: [
               Text(
                 label,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AegisColors.textPrimary),
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AegisColors.textPrimary),
               ),
               Text(
                 role,
@@ -420,35 +642,38 @@ class _HardwareDeviceCompanionWidgetState extends State<HardwareDeviceCompanionW
           ),
         ),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          width: 8,
+          height: 8,
           decoration: BoxDecoration(
-            color: AegisColors.primaryBlueLight,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: const Text(
-            'PHYSICAL',
-            style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: AegisColors.primaryBlue),
+            shape: BoxShape.circle,
+            color: color,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildSimulateBtn({required String label, required Color color, required VoidCallback onTap}) {
-    return ElevatedButton(
-      onPressed: onTap,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.white,
-        foregroundColor: color,
-        side: BorderSide(color: color.withValues(alpha: 0.4)),
+  Widget _buildSimulateBtn({
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        elevation: 0,
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
-        textAlign: TextAlign.center,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
+        ),
       ),
     );
   }

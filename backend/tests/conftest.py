@@ -1,3 +1,6 @@
+import os
+os.environ["AEGIS_TEST_MODE"] = "1"
+
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app

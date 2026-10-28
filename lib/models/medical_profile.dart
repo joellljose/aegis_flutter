@@ -7,22 +7,22 @@ class MedicalProfile {
   String nationalId;
 
   MedicalProfile({
-    this.fullName = 'Alex Morgan',
-    this.bloodGroup = 'O+ Positive',
-    this.allergies = 'Penicillin, Peanuts',
-    this.conditions = 'Mild Asthma',
-    this.emergencyNotes = 'Carries inhaler in backpack. Organ donor.',
-    this.nationalId = 'AEGIS-ID-9821',
+    this.fullName = '',
+    this.bloodGroup = 'Not set',
+    this.allergies = 'None reported',
+    this.conditions = 'None reported',
+    this.emergencyNotes = '',
+    this.nationalId = '',
   });
 
   factory MedicalProfile.fromJson(Map<String, dynamic> json) {
     return MedicalProfile(
-      fullName: json['fullName'] as String? ?? 'Alex Morgan',
-      bloodGroup: json['bloodGroup'] as String? ?? 'O+ Positive',
-      allergies: json['allergies'] as String? ?? 'None',
-      conditions: json['conditions'] as String? ?? 'None',
-      emergencyNotes: json['emergencyNotes'] as String? ?? '',
-      nationalId: json['nationalId'] as String? ?? 'AEGIS-ID-9821',
+      fullName: json['fullName'] as String? ?? json['full_name'] as String? ?? '',
+      bloodGroup: json['bloodGroup'] as String? ?? json['blood_group'] as String? ?? 'Not set',
+      allergies: json['allergies'] as String? ?? json['allergies'] as String? ?? 'None reported',
+      conditions: json['conditions'] as String? ?? json['medical_notes'] as String? ?? 'None reported',
+      emergencyNotes: json['emergencyNotes'] as String? ?? json['emergency_note'] as String? ?? '',
+      nationalId: json['nationalId'] as String? ?? json['uid'] as String? ?? '',
     );
   }
 
@@ -39,11 +39,11 @@ class MedicalProfile {
 
   String toQrString() {
     return 'AEGIS MEDICAL ID\n'
-        'Name: $fullName\n'
+        'Name: ${fullName.isNotEmpty ? fullName : "AEGIS User"}\n'
         'Blood Group: $bloodGroup\n'
         'Allergies: $allergies\n'
         'Conditions: $conditions\n'
-        'Notes: $emergencyNotes\n'
-        'ID: $nationalId';
+        'Notes: ${emergencyNotes.isNotEmpty ? emergencyNotes : "None"}\n'
+        'ID: ${nationalId.isNotEmpty ? nationalId : "UNPAIRED"}';
   }
 }

@@ -15,8 +15,10 @@ class AegisColors {
   // Status Accents
   static const Color policeRed = Color(0xFFDC2626);
   static const Color policeRedLight = Color(0xFFFEF2F2);
+  static const Color dangerRed = Color(0xFFDC2626);
   static const Color medicalGreen = Color(0xFF059669);
   static const Color medicalGreenLight = Color(0xFFECFDF5);
+  static const Color successGreen = Color(0xFF059669);
   static const Color warningAmber = Color(0xFFD97706);
   static const Color warningAmberLight = Color(0xFFFFFBEB);
 

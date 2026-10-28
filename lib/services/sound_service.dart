@@ -42,4 +42,6 @@ class SoundService {
       HapticFeedback.lightImpact();
     }
   }
+
+  void playCancelChime() => playSafeChime();
 }

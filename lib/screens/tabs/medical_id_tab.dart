@@ -55,12 +55,12 @@ class MedicalIdTab extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              med.fullName,
+                              med.fullName.isNotEmpty ? med.fullName : 'AEGIS User',
                               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: AegisColors.textPrimary),
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'ID: ${med.nationalId}',
+                              'ID: ${med.nationalId.isNotEmpty ? med.nationalId : "UNPAIRED"}',
                               style: const TextStyle(fontSize: 12, color: AegisColors.textSecondary, fontFamily: 'monospace'),
                             ),
                           ],

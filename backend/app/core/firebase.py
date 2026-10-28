@@ -38,6 +38,8 @@ def resolve_credentials_path() -> Optional[str]:
 
 
 def has_live_credentials() -> bool:
+    if os.environ.get("AEGIS_TEST_MODE") == "1":
+        return False
     return bool(
         resolve_credentials_path()
         or os.environ.get("FIRESTORE_EMULATOR_HOST")

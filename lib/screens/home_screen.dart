@@ -20,6 +20,17 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final auth = context.read<AuthProvider>();
+      if (auth.currentUser != null) {
+        context.read<AegisProvider>().syncWithUserProfile(auth.currentUser!);
+      }
+    });
+  }
+
   final List<Widget> _tabs = const [
     SafetyHubTab(),
     MapTab(),
@@ -34,35 +45,41 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        titleSpacing: 12,
         title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             // Shield Logo
             Container(
-              padding: const EdgeInsets.all(7),
+              padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
                 color: AegisColors.primaryBlueLight,
                 shape: BoxShape.circle,
                 border: Border.all(color: AegisColors.primaryBlue.withValues(alpha: 0.2)),
               ),
-              child: const Icon(Icons.shield, color: AegisColors.primaryBlue, size: 20),
-            ),
-            const SizedBox(width: 10),
-            const Text(
-              'AEGIS One',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AegisColors.textPrimary),
+              child: const Icon(Icons.shield, color: AegisColors.primaryBlue, size: 18),
             ),
             const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: AegisColors.primaryBlueLight,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: AegisColors.primaryBlue.withValues(alpha: 0.3)),
-              ),
-              child: const Text(
-                'COMPANION',
-                style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AegisColors.primaryBlue, letterSpacing: 0.5),
-              ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'AEGIS One',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AegisColors.textPrimary, height: 1.1),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: AegisColors.primaryBlueLight,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'COMPANION',
+                    style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: AegisColors.primaryBlue, letterSpacing: 0.5),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -74,16 +91,35 @@ class _HomeScreenState extends State<HomeScreen> {
           // BLE Hardware status button
           IconButton(
             onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  backgroundColor: AegisColors.primaryBlue,
-                  content: Text('Hardware BLE 5.0: ${provider.telemetry.bleDeviceName} is linked and active.'),
-                  duration: const Duration(seconds: 2),
-                ),
-              );
+              if (!provider.telemetry.isPaired) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    backgroundColor: AegisColors.primaryBlue,
+                    content: Text('No AEGIS One wearable paired. Use "Pair AEGIS One Wearable" on the dashboard to connect.'),
+                    duration: Duration(seconds: 3),
+                  ),
+                );
+              } else {
+                provider.toggleBleConnection();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: provider.telemetry.bleConnected ? AegisColors.primaryBlue : AegisColors.warningAmber,
+                    content: Text(provider.telemetry.bleConnected
+                        ? 'Hardware BLE 5.0 Link Active: ${provider.telemetry.bleDeviceName}'
+                        : 'Hardware BLE 5.0 Disconnected.'),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
             },
-            icon: const Icon(Icons.bluetooth_connected, color: AegisColors.primaryBlue, size: 22),
-            tooltip: 'Hardware Link Status',
+            icon: Icon(
+              provider.telemetry.bleConnected ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
+              color: provider.telemetry.bleConnected ? AegisColors.primaryBlue : AegisColors.textMuted,
+              size: 22,
+            ),
+            tooltip: provider.telemetry.isPaired
+                ? (provider.telemetry.bleConnected ? 'BLE Connected (Tap to Disconnect)' : 'BLE Disconnected (Tap to Reconnect)')
+                : 'No Device Paired',
           ),
 
           // User Profile & Sign Out Menu

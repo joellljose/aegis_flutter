@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import '../models/alert_types.dart';
 import '../models/system_state.dart';
@@ -8,6 +10,8 @@ import '../models/medical_profile.dart';
 import '../models/emergency_record.dart';
 import '../models/telemetry.dart';
 import '../models/log_entry.dart';
+import '../models/user_profile.dart';
+import '../services/auth_service.dart';
 import '../services/firebase_service.dart';
 import '../services/location_service.dart';
 import '../services/sound_service.dart';
@@ -20,6 +24,10 @@ class AegisProvider extends ChangeNotifier {
   final SoundService _soundService = SoundService();
   final DispatchService _dispatchService = DispatchService();
   final StorageService _storageService = StorageService();
+  final AuthService _authService = AuthService();
+
+  String? _currentUserId;
+  String get currentUserId => _currentUserId ?? _medicalProfile.nationalId;
 
   // State
   SystemState _state = SystemState.allSafe;
@@ -65,34 +73,31 @@ class AegisProvider extends ChangeNotifier {
   List<EmergencyContact> _contacts = [];
   List<EmergencyContact> get contacts => List.unmodifiable(_contacts);
 
-  // Telemetry & Hardware
+  // Telemetry & Hardware Device State
   final TelemetryData _telemetry = TelemetryData();
   TelemetryData get telemetry => _telemetry;
 
   // Real GPS & Location Status
-  double? _currentLat = 12.9716;
+  double? _currentLat;
   double? get currentLat => _currentLat;
 
-  double? _currentLng = 77.5946;
+  double? _currentLng;
   double? get currentLng => _currentLng;
 
-  double? _currentAccuracy = 8.0;
+  double? _currentAccuracy;
   double? get currentAccuracy => _currentAccuracy;
 
   double _currentSpeed = 0.0;
   double get currentSpeed => _currentSpeed;
 
-  String _currentAddress = 'Bengaluru Central Command Sector, KA';
+  String _currentAddress = 'Acquiring GPS fix...';
   String get currentAddress => _currentAddress;
 
-  String _locationStatusText = 'Ready';
+  String _locationStatusText = 'Acquiring GPS...';
   String get locationStatusText => _locationStatusText;
 
-  // Safe Zones
-  final List<Map<String, dynamic>> _safeZones = [
-    {'id': 'z1', 'name': 'Home Safe Haven', 'lat': 12.9716, 'lng': 77.5946, 'radius': 250},
-    {'id': 'z2', 'name': 'Tech Campus Zone', 'lat': 12.9352, 'lng': 77.6245, 'radius': 500},
-  ];
+  // User-defined Safe Zones (empty by default)
+  final List<Map<String, dynamic>> _safeZones = [];
   List<Map<String, dynamic>> get safeZones => List.unmodifiable(_safeZones);
 
   // Active Emergency Record
@@ -119,11 +124,130 @@ class AegisProvider extends ChangeNotifier {
     _mistouchDurationSec = settings['mistouchSec'] as int;
     _securityPin = settings['pin'] as String;
 
-    logEvent(LogType.info, 'AEGIS One System initialized. Hardware sensors standby.');
+    final paired = await _storageService.loadPairedDevice();
+    if (paired != null && paired['deviceId'] != null) {
+      _telemetry.isPaired = true;
+      _telemetry.deviceId = paired['deviceId'];
+      _telemetry.bleDeviceName = paired['deviceName'] ?? 'AEGIS One (${paired['deviceId']})';
+      _telemetry.bleConnected = true;
+      _telemetry.lastSyncTime = DateTime.now();
+    }
+
+    logEvent(LogType.info, 'AEGIS One Companion App ready. Sensors standby.');
     notifyListeners();
 
-    // Fetch initial GPS lock
+    // Fetch real GPS lock
     refreshLocation();
+  }
+
+  /// Syncs authenticated user data with the provider
+  void syncWithUserProfile(UserProfile user) {
+    _currentUserId = user.uid;
+    if (user.fullName.isNotEmpty) {
+      _medicalProfile.fullName = user.fullName;
+    }
+    _medicalProfile.nationalId = user.uid;
+
+    if (user.emergencyProfile != null) {
+      final ep = user.emergencyProfile!;
+      if (ep['blood_group'] != null && (ep['blood_group'] as String).isNotEmpty) {
+        _medicalProfile.bloodGroup = ep['blood_group'];
+      }
+      if (ep['allergies'] != null && (ep['allergies'] as String).isNotEmpty) {
+        _medicalProfile.allergies = ep['allergies'];
+      }
+      if (ep['medical_notes'] != null && (ep['medical_notes'] as String).isNotEmpty) {
+        _medicalProfile.conditions = ep['medical_notes'];
+      }
+      if (ep['emergency_note'] != null && (ep['emergency_note'] as String).isNotEmpty) {
+        _medicalProfile.emergencyNotes = ep['emergency_note'];
+      }
+    }
+
+    if (user.pairedDeviceId != null && user.pairedDeviceId!.isNotEmpty) {
+      pairDevice(user.pairedDeviceId!, syncBackend: false);
+    }
+
+    // Load contacts stored in Firestore for this authenticated user
+    _loadFirestoreContacts(user.uid);
+
+    notifyListeners();
+  }
+
+  Future<void> _loadFirestoreContacts(String uid) async {
+    try {
+      // 1. Fetch from Cloud Firestore
+      final fsContacts = await _firebaseService.fetchContactsFromFirestore(uid);
+      if (fsContacts.isNotEmpty) {
+        _contacts = fsContacts;
+        await _storageService.saveContacts(_contacts);
+        notifyListeners();
+        return;
+      }
+
+      // 2. Fetch from Backend API
+      final token = _authService.token;
+      if (token != null) {
+        final baseUrl = await _authService.getBaseUrl();
+        final res = await http.get(
+          Uri.parse('$baseUrl/api/contacts'),
+          headers: {'Authorization': 'Bearer $token'},
+        ).timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200) {
+          final list = jsonDecode(res.body) as List;
+          if (list.isNotEmpty) {
+            _contacts = list.map((e) => EmergencyContact.fromJson(e as Map<String, dynamic>)).toList();
+            await _storageService.saveContacts(_contacts);
+            notifyListeners();
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[AegisProvider] Contact load notice: $e');
+    }
+  }
+
+  Future<void> _syncContactWithBackend(EmergencyContact contact) async {
+    try {
+      final token = _authService.token;
+      if (token == null) return;
+      final baseUrl = await _authService.getBaseUrl();
+      final url = Uri.parse('$baseUrl/api/contacts');
+      await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'contact_id': contact.id,
+          'contact_name': contact.name,
+          'phone': contact.phone,
+          'relationship': contact.relation,
+          'priority': contact.priority,
+          'channels': contact.channels,
+        }),
+      ).timeout(const Duration(seconds: 4));
+    } catch (e) {
+      debugPrint('[AegisProvider] Backend contact sync notice: $e');
+    }
+  }
+
+  Future<void> _deleteContactFromBackend(String contactId) async {
+    try {
+      final token = _authService.token;
+      if (token == null) return;
+      final baseUrl = await _authService.getBaseUrl();
+      final url = Uri.parse('$baseUrl/api/contacts/$contactId');
+      await http.delete(
+        url,
+        headers: {
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 4));
+    } catch (e) {
+      debugPrint('[AegisProvider] Backend contact delete notice: $e');
+    }
   }
 
   void logEvent(LogType type, String message) {
@@ -141,7 +265,7 @@ class AegisProvider extends ChangeNotifier {
 
   // --- LOCATION ACQUISITION ---
   Future<void> refreshLocation() async {
-    _locationStatusText = 'Getting your location...';
+    _locationStatusText = 'Acquiring GPS fix...';
     notifyListeners();
 
     final result = await _locationService.getCurrentLocation();
@@ -151,23 +275,84 @@ class AegisProvider extends ChangeNotifier {
       _currentAccuracy = result.accuracy;
       _currentSpeed = result.speed ?? 0.0;
       _telemetry.gpsLocked = true;
-      _locationStatusText = 'Location acquired';
+      _locationStatusText = 'Location acquired (±${result.accuracy?.toStringAsFixed(1) ?? "3"}m)';
       notifyListeners();
 
-      // Async reverse geocoding
       final addr = await _locationService.reverseGeocode(_currentLat!, _currentLng!);
       if (addr != null) {
         _currentAddress = addr;
         notifyListeners();
       }
     } else {
-      _locationStatusText = 'Unable to access location';
+      _locationStatusText = 'GPS Standby';
       _telemetry.gpsLocked = false;
       notifyListeners();
     }
   }
 
-  // --- TRIGGER ALERT (Button click or Crash) ---
+  // --- DEVICE PAIRING & MANAGEMENT ---
+  Future<void> pairDevice(String deviceId, {String? deviceName, bool syncBackend = true}) async {
+    final cleanId = deviceId.trim().toUpperCase();
+    final cleanName = deviceName ?? 'AEGIS One ($cleanId)';
+
+    _telemetry.isPaired = true;
+    _telemetry.deviceId = cleanId;
+    _telemetry.bleDeviceName = cleanName;
+    _telemetry.bleConnected = true;
+    _telemetry.lastSyncTime = DateTime.now();
+    _telemetry.gpsLocked = _currentLat != null;
+
+    await _storageService.savePairedDevice(cleanId, cleanName);
+    logEvent(LogType.info, '🔗 AEGIS One wearable paired: $cleanId (BLE Link Established)');
+    notifyListeners();
+  }
+
+  Future<void> unpairDevice() async {
+    final oldId = _telemetry.deviceId ?? 'Wearable';
+    _telemetry.isPaired = false;
+    _telemetry.bleConnected = false;
+    _telemetry.deviceId = null;
+    _telemetry.bleDeviceName = 'AEGIS One';
+    await _storageService.clearPairedDevice();
+    logEvent(LogType.warn, 'Unpaired $oldId from this companion device.');
+    notifyListeners();
+  }
+
+  void toggleBleConnection() {
+    if (!_telemetry.isPaired) return;
+    _telemetry.bleConnected = !_telemetry.bleConnected;
+    if (_telemetry.bleConnected) {
+      _telemetry.lastSyncTime = DateTime.now();
+      _soundService.playClick();
+      logEvent(LogType.info, '📶 BLE 5.0 Link established with ${_telemetry.deviceId}');
+    } else {
+      logEvent(LogType.warn, '⚠️ BLE Link disconnected.');
+    }
+    notifyListeners();
+  }
+
+  void toggleFallDetection() {
+    _telemetry.fallDetectionEnabled = !_telemetry.fallDetectionEnabled;
+    logEvent(LogType.info, 'Fall Detection ${_telemetry.fallDetectionEnabled ? "ARMED" : "DISABLED"} on wearable.');
+    notifyListeners();
+  }
+
+  void toggleSilentAlarm() {
+    _telemetry.silentAlarm = !_telemetry.silentAlarm;
+    logEvent(LogType.warn, 'Silent Alarm Mode ${_telemetry.silentAlarm ? "ACTIVATED" : "DEACTIVATED"}.');
+    notifyListeners();
+  }
+
+  void triggerFindMyAegis() {
+    _soundService.playWarningBeep();
+    logEvent(LogType.info, '🔊 Acoustic Ping transmitted to ${_telemetry.deviceId ?? "Wearable"} (Buzzer sounded).');
+  }
+
+  void simulateVehicleCrash() {
+    triggerAlert(AlertType.crash, immediate: false);
+  }
+
+  // --- TRIGGER ALERT (Hardware button click or Crash) ---
   void triggerAlert(AlertType alertType, {bool immediate = false}) {
     if (_state == SystemState.activeDispatch) return;
 
@@ -182,7 +367,7 @@ class AegisProvider extends ChangeNotifier {
 
     _state = SystemState.mistouchWindow;
     _countdownRemaining = _mistouchDurationSec;
-    logEvent(LogType.warn, '⚠️ ${alertType.displayName} Triggered. $_mistouchDurationSec s mistouch cancellation window active.');
+    logEvent(LogType.warn, '⚠️ ${alertType.displayName} Triggered. $_mistouchDurationSec s cancellation window active.');
 
     _startCountdownTimer();
     notifyListeners();
@@ -193,7 +378,7 @@ class AegisProvider extends ChangeNotifier {
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_countdownRemaining > 0) {
         _countdownRemaining--;
-        if (_countdownRemaining % 10 == 0 && _countdownRemaining > 0) {
+        if (_countdownRemaining % 10 == 0 && _countdownRemaining > 0 && !_telemetry.silentAlarm) {
           _soundService.playWarningBeep();
         }
         notifyListeners();
@@ -237,7 +422,6 @@ class AegisProvider extends ChangeNotifier {
       _holdTimer = null;
     }
 
-    // If released before 5s, trigger normal mistouch flow (single click)
     if (_holdProgress < 1.0 && _holdingButton == alertType) {
       triggerAlert(alertType, immediate: false);
     }
@@ -254,12 +438,13 @@ class AegisProvider extends ChangeNotifier {
     _countdownRemaining = 0;
 
     _state = SystemState.activeDispatch;
-    _soundService.playEmergencyAlarm();
+    if (!_telemetry.silentAlarm) {
+      _soundService.playEmergencyAlarm();
+    }
 
     final alertName = _activeAlertType?.shortCode ?? 'POLICE';
     logEvent(LogType.danger, '💥 CONFIRMED EMERGENCY DISPATCH: $alertName Dispatched with Live GPS Coordinates!');
 
-    // Build authoritative emergency record
     final recordId = 'emg_${DateTime.now().millisecondsSinceEpoch}';
     final hasCoords = _currentLat != null && _currentLng != null;
     final mapUrl = hasCoords
@@ -287,7 +472,7 @@ class AegisProvider extends ChangeNotifier {
     // Sync to Firebase Cloud Firestore
     await _firebaseService.saveEmergencyRecord(record);
 
-    // Simulate contacts dispatch delivery
+    // Notify contacts
     _dispatchToContacts();
   }
 
@@ -300,59 +485,31 @@ class AegisProvider extends ChangeNotifier {
 
     _countdownTimer?.cancel();
     _countdownTimer = null;
-
-    final wasCountdown = _state == SystemState.mistouchWindow;
-    _state = SystemState.allSafe;
     _countdownRemaining = 0;
-    _holdProgress = 0.0;
-    _holdingButton = null;
-
-    _soundService.playSafeChime();
-
-    if (wasCountdown) {
-      logEvent(LogType.success, '✅ Mistouch Alert Cancelled. System returned to All Safe standby.');
-    } else {
-      logEvent(LogType.success, '🛡️ Active ${_activeAlertType?.shortCode ?? "Emergency"} Resolved. Responders stood down.');
-      if (_lastEmergencyRecord != null) {
-        _firebaseService.resolveEmergency(_lastEmergencyRecord!.emergencyId);
-      }
-    }
-
+    _state = SystemState.allSafe;
     _activeAlertType = null;
+    _soundService.playCancelChime();
+
+    logEvent(LogType.info, '✅ Alert cancelled. System reset to Safe Standby.');
     _resetContactStatuses();
     notifyListeners();
     return true;
   }
 
-  // --- VEHICLE CRASH SIMULATION ---
-  void simulateVehicleCrash() {
-    if (!_crashDetectionEnabled) return;
-    logEvent(LogType.danger, '🚗💥 CRASH IMPACT DETECTED! Accelerometer: 9.8G Impact Vector. Initiating emergency response.');
-    triggerAlert(AlertType.crash, immediate: false);
-  }
-
-  // --- FIND MY AEGIS BUZZER ---
-  void triggerFindMyAegis() {
-    logEvent(LogType.info, '🔊 "Find My AEGIS" command sent. Hardware acoustic beacon sounding...');
-    _soundService.playEmergencyAlarm();
-  }
-
-  // --- DISPATCH SIMULATION PROGRESSION ---
+  // --- DISPATCH NOTIFICATIONS ---
   void _dispatchToContacts() {
     for (int i = 0; i < _contacts.length; i++) {
       final contact = _contacts[i];
       contact.status = 'SENDING';
 
-      // Delivered delay
-      Future.delayed(Duration(milliseconds: 1200 + i * 800), () {
+      Future.delayed(Duration(milliseconds: 1000 + i * 600), () {
         if (_state == SystemState.activeDispatch) {
           contact.status = 'DELIVERED';
           notifyListeners();
         }
       });
 
-      // Acknowledged delay
-      Future.delayed(Duration(milliseconds: 4000 + i * 2000), () {
+      Future.delayed(Duration(milliseconds: 3000 + i * 1500), () {
         if (_state == SystemState.activeDispatch) {
           contact.status = 'ACKNOWLEDGED';
           notifyListeners();
@@ -372,7 +529,13 @@ class AegisProvider extends ChangeNotifier {
   void addContact(EmergencyContact contact) {
     _contacts.add(contact);
     _storageService.saveContacts(_contacts);
-    _firebaseService.syncContacts(_medicalProfile.nationalId, _contacts);
+    final uid = currentUserId;
+    if (uid.isNotEmpty) {
+      _firebaseService.saveContactToFirestore(userId: uid, contact: contact);
+      _firebaseService.syncContacts(uid, _contacts);
+      _syncContactWithBackend(contact);
+    }
+    logEvent(LogType.info, 'Emergency contact saved to Firestore: ${contact.name}');
     notifyListeners();
   }
 
@@ -381,7 +544,12 @@ class AegisProvider extends ChangeNotifier {
     if (idx != -1) {
       _contacts[idx] = updated;
       _storageService.saveContacts(_contacts);
-      _firebaseService.syncContacts(_medicalProfile.nationalId, _contacts);
+      final uid = currentUserId;
+      if (uid.isNotEmpty) {
+        _firebaseService.saveContactToFirestore(userId: uid, contact: updated);
+        _firebaseService.syncContacts(uid, _contacts);
+        _syncContactWithBackend(updated);
+      }
       notifyListeners();
     }
   }
@@ -389,7 +557,13 @@ class AegisProvider extends ChangeNotifier {
   void deleteContact(String id) {
     _contacts.removeWhere((c) => c.id == id);
     _storageService.saveContacts(_contacts);
-    _firebaseService.syncContacts(_medicalProfile.nationalId, _contacts);
+    final uid = currentUserId;
+    if (uid.isNotEmpty) {
+      _firebaseService.deleteContactFromFirestore(id);
+      _firebaseService.syncContacts(uid, _contacts);
+      _deleteContactFromBackend(id);
+    }
+    logEvent(LogType.warn, 'Emergency contact removed from Firestore.');
     notifyListeners();
   }
 
@@ -398,6 +572,7 @@ class AegisProvider extends ChangeNotifier {
     _medicalProfile = profile;
     _storageService.saveMedicalProfile(_medicalProfile);
     _firebaseService.syncMedicalProfile(_medicalProfile.nationalId, _medicalProfile);
+    logEvent(LogType.info, 'Medical Profile updated.');
     notifyListeners();
   }
 

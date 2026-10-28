@@ -120,10 +120,43 @@ class ContactsTab extends StatelessWidget {
 
           // Contacts List
           if (contacts.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 40),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
               child: Center(
-                child: Text('No emergency contacts added yet.', style: TextStyle(color: AegisColors.textMuted)),
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AegisColors.primaryBlueLight,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.contact_phone_outlined, size: 36, color: AegisColors.primaryBlue),
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'No Emergency Contacts Added',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AegisColors.textPrimary),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Add trusted family members, colleagues, or neighbors who will receive your live GPS coordinates and instant alerts whenever you trigger your AEGIS One device.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, color: AegisColors.textSecondary, height: 1.4),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: () => _showAddContactDialog(context, provider),
+                      icon: const Icon(Icons.person_add, size: 16),
+                      label: const Text('Add First Responder Contact'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AegisColors.primaryBlue,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             )
           else
@@ -349,10 +382,12 @@ class ContactsTab extends StatelessWidget {
                 const SizedBox(height: 12),
                 TextField(controller: relationCtrl, decoration: const InputDecoration(labelText: 'Relation (Family, Doctor, Friend)')),
                 const SizedBox(height: 16),
-                Row(
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 4,
                   children: [
                     const Text('Priority:', style: TextStyle(fontSize: 13, color: AegisColors.textSecondary)),
-                    const SizedBox(width: 14),
                     ChoiceChip(
                       label: const Text('Priority 1'),
                       selected: priority == 1,
@@ -360,10 +395,11 @@ class ContactsTab extends StatelessWidget {
                       labelStyle: TextStyle(
                         color: priority == 1 ? AegisColors.primaryBlue : AegisColors.textSecondary,
                         fontWeight: FontWeight.bold,
+                        fontSize: 12,
                       ),
+                      visualDensity: VisualDensity.compact,
                       onSelected: (_) => setState(() => priority = 1),
                     ),
-                    const SizedBox(width: 8),
                     ChoiceChip(
                       label: const Text('Priority 2'),
                       selected: priority == 2,
@@ -371,7 +407,9 @@ class ContactsTab extends StatelessWidget {
                       labelStyle: TextStyle(
                         color: priority == 2 ? AegisColors.primaryBlue : AegisColors.textSecondary,
                         fontWeight: FontWeight.bold,
+                        fontSize: 12,
                       ),
+                      visualDensity: VisualDensity.compact,
                       onSelected: (_) => setState(() => priority = 2),
                     ),
                   ],

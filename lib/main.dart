@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'providers/aegis_provider.dart';
 import 'providers/auth_provider.dart';
-import 'screens/auth/auth_screen.dart';
+import 'screens/auth/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'theme/aegis_theme.dart';
 
@@ -42,7 +42,7 @@ class AegisApp extends StatelessWidget {
       title: 'AEGIS One // Companion App',
       debugShowCheckedModeBanner: false,
       theme: AegisTheme.lightTheme,
-      home: authProvider.isAuthenticated ? const HomeScreen() : const AuthScreen(),
+      home: authProvider.isAuthenticated ? const HomeScreen() : const LoginScreen(),
     );
   }
 }

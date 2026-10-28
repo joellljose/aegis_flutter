@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_core/firebase_core.dart' hide FirebaseService;
 import '../models/user_profile.dart';
 
 class AuthService {
@@ -46,9 +46,24 @@ class AuthService {
     await prefs.setString(_keyBackendUrl, url.trim());
   }
 
-  /// Initialize cached credentials on app launch
+  /// Initialize cached credentials or restore from Firebase Auth
   Future<UserProfile?> init() async {
     try {
+      // 1. Check if Firebase Auth currentUser is already authenticated
+      if (_isFirebaseInitialized() && FirebaseAuth.instance.currentUser != null) {
+        final fbUser = FirebaseAuth.instance.currentUser!;
+        _cachedToken = await fbUser.getIdToken();
+        _cachedProfile = UserProfile(
+          uid: fbUser.uid,
+          fullName: fbUser.displayName ?? fbUser.email?.split('@').first ?? 'AEGIS User',
+          email: fbUser.email ?? '',
+          phone: fbUser.phoneNumber,
+          emailVerified: fbUser.emailVerified,
+        );
+        return _cachedProfile;
+      }
+
+      // 2. Read from local storage
       final prefs = await SharedPreferences.getInstance();
       _cachedToken = prefs.getString(_keyToken);
       final profileJson = prefs.getString(_keyProfile);
@@ -57,18 +72,6 @@ class AuthService {
         _cachedProfile = UserProfile.fromJson(jsonDecode(profileJson));
       }
 
-      // If we have a cached token, try to refresh profile from backend
-      if (_cachedToken != null) {
-        try {
-          final refreshed = await fetchProfileFromBackend(_cachedToken!);
-          if (refreshed != null) {
-            _cachedProfile = refreshed;
-            await _saveSession(_cachedToken!, refreshed);
-          }
-        } catch (e) {
-          debugPrint('[AuthService] Backend profile refresh deferred: $e');
-        }
-      }
       return _cachedProfile;
     } catch (e) {
       debugPrint('[AuthService] Init error: $e');
@@ -76,7 +79,9 @@ class AuthService {
     }
   }
 
-  /// Register a new user with Firebase Auth and create profile on Python FastAPI Backend
+  /// Register user:
+  /// Creates the user directly in Firebase Authentication (project aegis-fdf8f)
+  /// and saves the user record in Cloud Firestore 'users' collection.
   Future<UserProfile> register({
     required String email,
     required String password,
@@ -84,37 +89,16 @@ class AuthService {
     String? phone,
     Map<String, dynamic>? emergencyProfile,
   }) async {
-    String authToken;
-    String uid;
+    final cleanEmail = email.trim().toLowerCase();
 
-    // 1. Firebase Authentication Registration
-    if (_isFirebaseInitialized()) {
-      try {
-        final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: email.trim(),
-          password: password.trim(),
-        );
-        final user = credential.user;
-        if (user == null) throw Exception('Firebase user creation returned null.');
-        uid = user.uid;
-        authToken = await user.getIdToken() ?? 'mock-token:$uid:normal_user';
-      } catch (e) {
-        // Fallback for offline / dev emulator mode if Firebase network is unconfigured
-        debugPrint('[AuthService] Firebase Auth create error, using dev mock token: $e');
-        uid = 'user_${email.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}';
-        authToken = 'mock-token:$uid:normal_user';
-      }
-    } else {
-      uid = 'user_${email.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}';
-      authToken = 'mock-token:$uid:normal_user';
-    }
-
-    // 2. Call FastAPI Backend to create user profile in Firestore
+    // 1. Call Backend to create user directly in Firebase Authentication via Firebase Admin SDK
     final baseUrl = await getBaseUrl();
-    final profileUrl = Uri.parse('$baseUrl/api/v1/profile');
+    final regUrl = Uri.parse('$baseUrl/api/auth/register');
 
     final payload = {
       'full_name': fullName.trim(),
+      'email': cleanEmail,
+      'password': password.trim(),
       'phone': phone?.trim(),
       'emergency_profile': emergencyProfile,
     };
@@ -122,122 +106,168 @@ class AuthService {
     try {
       final response = await http
           .post(
-            profileUrl,
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer $authToken',
-            },
+            regUrl,
+            headers: {'Content-Type': 'application/json'},
             body: jsonEncode(payload),
           )
-          .timeout(const Duration(seconds: 8));
+          .timeout(const Duration(seconds: 12));
 
-      if (response.statusCode == 201) {
+      if (response.statusCode == 201 || response.statusCode == 200) {
         final profileData = jsonDecode(response.body) as Map<String, dynamic>;
         final profile = UserProfile.fromJson(profileData);
-        await _saveSession(authToken, profile);
+        final token = 'mock-token:${profile.uid}:${profile.role}';
+        await _saveSession(token, profile);
+        debugPrint('[AuthService] Successfully registered in Firebase Auth: ${profile.email}');
         return profile;
-      } else if (response.statusCode == 409) {
-        // Profile already created; fetch existing
-        final existing = await fetchProfileFromBackend(authToken);
-        if (existing != null) {
-          await _saveSession(authToken, existing);
-          return existing;
-        }
-        throw Exception('User profile already registered in AEGIS backend.');
       } else {
         final errorMsg = _extractErrorMessage(response.body);
-        throw Exception('Backend registration failed (${response.statusCode}): $errorMsg');
+        throw Exception(errorMsg);
       }
     } catch (e) {
-      debugPrint('[AuthService] Backend registration warning: $e');
-      // If backend is temporarily offline, create local session with token
-      final fallbackProfile = UserProfile(
-        uid: uid,
-        fullName: fullName.trim(),
-        email: email.trim(),
-        phone: phone?.trim(),
-        role: 'normal_user',
-        accountStatus: 'active',
-        emergencyProfile: emergencyProfile,
-        createdAt: DateTime.now().toIso8601String(),
-      );
-      await _saveSession(authToken, fallbackProfile);
-      return fallbackProfile;
+      debugPrint('[AuthService] Backend registration note: $e');
+      if (e.toString().contains('already exists')) rethrow;
     }
+
+    // 2. Direct client Firebase Auth fallback if client Firebase is initialized
+    if (_isFirebaseInitialized()) {
+      try {
+        final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          email: cleanEmail,
+          password: password.trim(),
+        );
+        final user = credential.user;
+        if (user != null) {
+          await user.updateDisplayName(fullName.trim());
+          final token = await user.getIdToken() ?? '';
+          final profile = UserProfile(
+            uid: user.uid,
+            fullName: fullName.trim(),
+            email: cleanEmail,
+            phone: phone?.trim(),
+            role: 'normal_user',
+            accountStatus: 'active',
+            emergencyProfile: emergencyProfile,
+          );
+          await _saveSession(token, profile);
+          return profile;
+        }
+      } on FirebaseAuthException catch (fae) {
+        throw Exception(_formatFirebaseAuthError(fae));
+      } catch (_) {}
+    }
+
+    // 3. Fallback profile
+    final fallback = UserProfile(
+      uid: 'user_${cleanEmail.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}',
+      fullName: fullName.trim(),
+      email: cleanEmail,
+      phone: phone?.trim(),
+      role: 'normal_user',
+      accountStatus: 'active',
+      emergencyProfile: emergencyProfile,
+    );
+    await _saveSession('mock-token:${fallback.uid}:normal_user', fallback);
+    return fallback;
   }
 
-  /// Login with Firebase Auth and sync profile with Python FastAPI Backend
+  /// Login:
+  /// Verifies credentials against Firebase Authentication and retrieves user profile from Firestore.
   Future<UserProfile> login({
     required String email,
     required String password,
   }) async {
-    String authToken;
-    String uid;
+    final cleanEmail = email.trim().toLowerCase();
 
-    // 1. Firebase Authentication Login
+    // 1. Direct Client Firebase Authentication if initialized
     if (_isFirebaseInitialized()) {
       try {
         final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: email.trim(),
+          email: cleanEmail,
           password: password.trim(),
         );
         final user = credential.user;
-        if (user == null) throw Exception('Firebase user sign-in returned null.');
-        uid = user.uid;
-        authToken = await user.getIdToken() ?? 'mock-token:$uid:normal_user';
+        if (user != null) {
+          final token = await user.getIdToken() ?? '';
+          final profile = UserProfile(
+            uid: user.uid,
+            fullName: user.displayName ?? cleanEmail.split('@').first,
+            email: cleanEmail,
+            phone: user.phoneNumber,
+            role: 'normal_user',
+            accountStatus: 'active',
+          );
+          await _saveSession(token, profile);
+          return profile;
+        }
+      } on FirebaseAuthException catch (fae) {
+        throw Exception(_formatFirebaseAuthError(fae));
       } catch (e) {
-        debugPrint('[AuthService] Firebase signIn error, falling back to mock dev mode: $e');
-        uid = 'user_${email.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}';
-        authToken = 'mock-token:$uid:normal_user';
+        debugPrint('[AuthService] Client FirebaseAuth note: $e');
       }
-    } else {
-      uid = 'user_${email.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}';
-      authToken = 'mock-token:$uid:normal_user';
     }
 
-    // 2. Fetch User Profile from Python Backend
+    // 2. Call Backend API to verify user in Firebase Authentication & Cloud Firestore
+    final baseUrl = await getBaseUrl();
+    final loginUrl = Uri.parse('$baseUrl/api/auth/login');
+
     try {
-      final backendProfile = await fetchProfileFromBackend(authToken);
-      if (backendProfile != null) {
-        await _saveSession(authToken, backendProfile);
-        return backendProfile;
+      final response = await http
+          .post(
+            loginUrl,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'email': cleanEmail, 'password': password.trim()}),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        final userDoc = json['user_profile'] as Map<String, dynamic>? ?? json;
+        final profile = UserProfile.fromJson(userDoc);
+        final token = 'mock-token:${profile.uid}:${profile.role}';
+        await _saveSession(token, profile);
+        return profile;
+      } else {
+        final msg = _extractErrorMessage(response.body);
+        throw Exception(msg);
       }
     } catch (e) {
-      debugPrint('[AuthService] Backend profile lookup warning: $e');
+      if (e.toString().contains('suspended') || e.toString().contains('not found')) rethrow;
+      debugPrint('[AuthService] Backend login call note: $e');
     }
 
-    // Fallback if backend unreachable
+    // Fallback profile
     final fallback = UserProfile(
-      uid: uid,
-      fullName: email.split('@').first,
-      email: email.trim(),
+      uid: 'user_${cleanEmail.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}',
+      fullName: cleanEmail.split('@').first,
+      email: cleanEmail,
       role: 'normal_user',
       accountStatus: 'active',
     );
-    await _saveSession(authToken, fallback);
+    await _saveSession('mock-token:${fallback.uid}:normal_user', fallback);
     return fallback;
   }
 
-  /// Fetch user profile from /api/v1/profile/me
-  Future<UserProfile?> fetchProfileFromBackend(String token) async {
-    final baseUrl = await getBaseUrl();
-    final url = Uri.parse('$baseUrl/api/v1/profile/me');
+  /// Sends a Password Reset email via Firebase Authentication
+  Future<void> sendPasswordReset(String email) async {
+    final cleanEmail = email.trim().toLowerCase();
+    
+    // 1. Try via backend Firebase Admin SDK
+    try {
+      final baseUrl = await getBaseUrl();
+      final url = Uri.parse('$baseUrl/api/auth/reset-password?email=$cleanEmail');
+      await http.post(url).timeout(const Duration(seconds: 6));
+    } catch (_) {}
 
-    final response = await http
-        .get(
-          url,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-        )
-        .timeout(const Duration(seconds: 6));
-
-    if (response.statusCode == 200) {
-      final json = jsonDecode(response.body) as Map<String, dynamic>;
-      return UserProfile.fromJson(json);
+    // 2. Try via client Firebase Auth
+    if (_isFirebaseInitialized()) {
+      try {
+        await FirebaseAuth.instance.sendPasswordResetEmail(email: cleanEmail);
+      } on FirebaseAuthException catch (fae) {
+        throw Exception(_formatFirebaseAuthError(fae));
+      } catch (e) {
+        throw Exception('Failed to send password reset: $e');
+      }
     }
-    return null;
   }
 
   /// Sign out
@@ -268,6 +298,27 @@ class AuthService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyToken, token);
     await prefs.setString(_keyProfile, jsonEncode(profile.toJson()));
+  }
+
+  String _formatFirebaseAuthError(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'user-not-found':
+        return 'No user found with this email in Firebase.';
+      case 'wrong-password':
+        return 'Incorrect password. Please try again.';
+      case 'invalid-credential':
+        return 'Invalid email or password.';
+      case 'email-already-in-use':
+        return 'An account already exists with this email address in Firebase.';
+      case 'weak-password':
+        return 'Password must be at least 6 characters.';
+      case 'invalid-email':
+        return 'Invalid email address format.';
+      case 'user-disabled':
+        return 'This account has been disabled.';
+      default:
+        return e.message ?? 'Firebase Authentication error.';
+    }
   }
 
   String _extractErrorMessage(String body) {

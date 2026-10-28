@@ -34,6 +34,24 @@ class FirestoreService:
         """Used in test fixtures for isolation"""
         for col in self._in_memory:
             self._in_memory[col].clear()
+        db = self._get_db()
+        if db:
+            test_uids = ["user_123", "user_456", "admin_001", "police_789", "police_assigned", "police_unassigned"]
+            for u in test_uids:
+                try:
+                    db.collection("users").document(u).delete()
+                except Exception:
+                    pass
+
+    def delete_user(self, uid: str) -> bool:
+        db = self._get_db()
+        if db:
+            try:
+                db.collection("users").document(uid).delete()
+            except Exception as e:
+                logger.warning("Firestore delete_user error: %s", e)
+        self._in_memory["users"].pop(uid, None)
+        return True
 
     # ================= USER OPERATIONS =================
     def get_user(self, uid: str) -> Optional[Dict[str, Any]]:

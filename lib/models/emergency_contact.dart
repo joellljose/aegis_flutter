@@ -19,10 +19,10 @@ class EmergencyContact {
 
   factory EmergencyContact.fromJson(Map<String, dynamic> json) {
     return EmergencyContact(
-      id: json['id'] as String? ?? 'c_${DateTime.now().millisecondsSinceEpoch}',
-      name: json['name'] as String? ?? '',
+      id: json['id'] as String? ?? json['contact_id'] as String? ?? 'c_${DateTime.now().millisecondsSinceEpoch}',
+      name: json['name'] as String? ?? json['contact_name'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
-      relation: json['relation'] as String? ?? 'Contact',
+      relation: json['relation'] as String? ?? json['relationship'] as String? ?? 'Family',
       priority: json['priority'] as int? ?? 1,
       channels: (json['channels'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? ['SMS', 'WhatsApp'],
       status: json['status'] as String? ?? 'STANDBY',
@@ -32,9 +32,12 @@ class EmergencyContact {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'contact_id': id,
       'name': name,
+      'contact_name': name,
       'phone': phone,
       'relation': relation,
+      'relationship': relation,
       'priority': priority,
       'channels': channels,
       'status': status,

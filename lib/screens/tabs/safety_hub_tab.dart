@@ -208,7 +208,7 @@ class SafetyHubTab extends StatelessWidget {
       crossAxisCount: 2,
       crossAxisSpacing: 10,
       mainAxisSpacing: 10,
-      childAspectRatio: 2.3,
+      childAspectRatio: 1.95,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       children: [
